@@ -1,0 +1,73 @@
+# Cloud Dimensions - ServiceNow CI/CD lab pipeline
+# Branch: main  (Lab 4 / Lesson 8 - Run an ATF Suite and Instance Scan in a Pipeline)
+# Starting state: this is the completed Lab 3 pipeline (the pre-written instance-resolution
+# step, job-level pipeline credentials, and the apply-changes step). Your task is to add
+# the ATF test suite step (Part 1) and the instance scan step (Part 2), each with its own
+# step-level env block.
+name: CICD Pipeline
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      nowUsername: ${{ secrets.SN_USERNAME }}
+      nowPassword: ${{ secrets.SN_PASSWORD }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Pre-written for you - you do not need to edit this step.
+      # The sncicd-* actions build their request URL as
+      # https://${nowSourceInstance}.service-now.com/api/... so they need the
+      # bare instance name only. This step accepts whatever you pasted into the
+      # SN_INSTANCE_DOMAIN variable (full URL, hostname, or bare name), reduces
+      # it to that bare form, and stops the run with a clear message if it cannot.
+      - name: Resolve ServiceNow instance
+        env:
+          RAW: ${{ vars.SN_INSTANCE_DOMAIN }}
+        run: |
+          if [ -z "$RAW" ]; then
+            echo "::error::SN_INSTANCE_DOMAIN is not set. Add it under Settings, then Secrets and variables, then Actions, on the Variables tab."
+            exit 1
+          fi
+          # This step cleans up whatever you pasted into SN_INSTANCE_DOMAIN: it
+          # lowercases the value, strips a leading https:// or trailing slash, and
+          # removes a trailing .service-now.com if you included it.
+          # It also rejects angle brackets, quotes, and other characters that do not
+          # belong in a hostname - for example, if you paste the placeholder text
+          # nowlearning-<your-instance-id>.lab literally instead of your real
+          # instance name, this step catches that and tells you what to fix.
+          INSTANCE=$(printf '%s' "$RAW" \
+            | tr -d '[:space:]' \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -e 's#^[a-z][a-z0-9+.-]*://##' \
+                  -e 's#^//##' \
+                  -e 's#/.*$##' \
+                  -e 's#^[^a-z0-9]*##' \
+                  -e 's#[^a-z0-9]*$##' \
+                  -e 's#\.service-now\.com$##')
+          case "$INSTANCE" in
+            ''|*[!a-z0-9.-]*|-*|*-|.*|*.|*..*)
+              echo "::error::SN_INSTANCE_DOMAIN could not be read as an instance name."
+              echo "::error::You entered: $RAW"
+              echo "::error::Expected something like: your-instance-id.lab"
+              echo "::error::Enter the instance name only - no https://, no angle brackets, no quotes."
+              exit 1 ;;
+          esac
+          echo "Resolved ServiceNow instance: $INSTANCE"
+          echo "SN_INSTANCE=$INSTANCE" >> "$GITHUB_ENV"
+
+      - name: Apply changes
+        uses: ServiceNow/sncicd-apply-changes@d9e560381b65fc450f8dc85b084c1a6cc40e503c  # 2.0.0, pinned 2026-08-07 LOOP-356 (node12 EOL mitigation)
+        continue-on-error: true
+        env:
+          nowSourceInstance: ${{ env.SN_INSTANCE }}
+          appScope: x_cd_grc_app
+
+      # TODO: Add the ATF test suite step here (Part 1)
+
+      # TODO: Add the instance scan step here (Part 2)
